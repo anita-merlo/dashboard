@@ -554,6 +554,7 @@ with left:
 
 # RIGHT: Bar chart (boxed, scrolls inside)
 # ---------- RIGHT: Bar chart (boxed, scrolls inside; compact spacing) ----------
+# ---------- RIGHT: Bar chart (boxed, auto-tight) ----------
 with right:
     with st.container(border=True):
         indicator_label = indicator_selected
@@ -572,69 +573,64 @@ with right:
             unsafe_allow_html=True,
         )
 
-        # Data (largest on top)
         bars = stats.sort_values("current", ascending=False).copy()
         bars["_pct"] = bars["pct_change"] * 100
+        pct_all_nan = bars["_pct"].isna().all()
 
-        # Base figure
         BAR_COLOR = "#005a70"
-        fig = px.bar(
-            bars, x="current", y="state", orientation="h",
-            labels={"state": "State", "current": indicator_label},
-        )
+        fig = px.bar(bars, x="current", y="state", orientation="h",
+                     labels={"state":"State","current":indicator_label})
         fig.update_traces(marker_color=BAR_COLOR, hoverinfo="skip", cliponaxis=False)
 
-        # ---------- Compact geometry ----------
         xmax = float(bars["current"].max() or 1)
 
+        # paddings
         if is_ratio_like:
-            # For tiny values (e.g., 0.32), keep paddings proportional; no big hard floor.
-            LEFT_PAD       = xmax * 0.40        # room for "0.00" + state code
-            RIGHT_GAP_FRAC = 0.18               # tidy right gutter
+            LEFT_PAD = max(xmax * 0.35, 0.15)   # enough for "0.00"
         else:
-            LEFT_PAD       = max(xmax * 0.14, 1.0)
-            RIGHT_GAP_FRAC = 0.22
+            LEFT_PAD = max(xmax * 0.12, 1.0)    # enough for "12.3K"
 
-        VAR_X = xmax * (1 + RIGHT_GAP_FRAC * 0.92)   # where %Δ text sits
-        SEP_X = xmax * (1 + RIGHT_GAP_FRAC * 0.55)   # subtle divider
+        if pct_all_nan:
+            RIGHT_GAP_FRAC = 0.04               # super tight when no %Δ column
+        else:
+            RIGHT_GAP_FRAC = 0.18               # small but visible space for %Δ column
 
-        # ---------- %Δ column ----------
-        pct_colors = bars["pct_change"].apply(
-            lambda v: "#2e7d32" if (pd.notna(v) and v >= 0) else ("#c62828" if pd.notna(v) else "#666")
-        )
-        pct_text = bars["_pct"].map(lambda v: "–" if pd.isna(v)
-                                    else (f"▲ {abs(v):.1f}%" if v >= 0 else f"▼ {abs(v):.1f}%"))
-        fig.add_trace(go.Scatter(
-            x=[VAR_X] * len(bars), y=bars["state"], mode="text",
-            text=pct_text, textfont=dict(color=pct_colors.tolist(), size=12),
-            hoverinfo="skip", showlegend=False, cliponaxis=False,
-        ))
+        # Optional %Δ column (only when we have it)
+        if not pct_all_nan:
+            VAR_X = xmax * (1 + RIGHT_GAP_FRAC * 0.90)
+            SEP_X = xmax * (1 + RIGHT_GAP_FRAC * 0.55)
 
-        # Divider between bars and %Δ
-        fig.add_shape(
-            type="line", xref="x", yref="paper",
-            x0=SEP_X, x1=SEP_X, y0=0, y1=1,
-            line=dict(color="#edf2f5", width=1),
-        )
+            pct_colors = bars["pct_change"].apply(
+                lambda v: "#2e7d32" if (pd.notna(v) and v >= 0) else ("#c62828" if pd.notna(v) else "#666")
+            )
+            pct_text = bars["_pct"].map(lambda v: "–" if pd.isna(v)
+                                        else (f"▲ {abs(v):.1f}%" if v >= 0 else f"▼ {abs(v):.1f}%"))
+            fig.add_trace(go.Scatter(
+                x=[VAR_X] * len(bars), y=bars["state"], mode="text",
+                text=pct_text, textfont=dict(color=pct_colors.tolist(), size=12),
+                hoverinfo="skip", showlegend=False, cliponaxis=False,
+            ))
+            fig.add_shape(
+                type="line", xref="x", yref="paper",
+                x0=SEP_X, x1=SEP_X, y0=0, y1=1,
+                line=dict(color="#edf2f5", width=1),
+            )
 
-        # ---------- Left numeric column ----------
-        # Uses _fmt_k(v) for counts (1.2K, 950, …) and two decimals for ratios/intensities.
+        # Left numeric column
         val_text = bars["current"].map(lambda v: f"{v:.2f}" if is_ratio_like else _fmt_k(v))
         fig.add_trace(go.Scatter(
-            x=[-LEFT_PAD * 0.90] * len(bars), y=bars["state"], mode="text",
+            x=[-LEFT_PAD * 0.92] * len(bars), y=bars["state"], mode="text",
             text=val_text, textposition="middle right",
             textfont=dict(color="#2b2b2b", size=12),
             hoverinfo="skip", showlegend=False, cliponaxis=False,
         ))
 
-        # ---------- Axes & layout ----------
+        # Axes & layout
         fig.update_xaxes(
             range=[-LEFT_PAD * 1.05, xmax * (1 + RIGHT_GAP_FRAC)],
             showgrid=False, title=None, zeroline=False,
+            tickformat=".2f" if is_ratio_like else None
         )
-        if is_ratio_like:
-            fig.update_xaxes(tickformat=".2f")  # ticks show 2 decimals for ratio/intensity
-
         fig.update_yaxes(
             showgrid=False, title=None,
             categoryorder="array", categoryarray=list(bars["state"]),
@@ -642,26 +638,22 @@ with right:
             ticklen=0, tickfont=dict(size=12), automargin=True,
         )
 
-        # Make the figure taller than the viewport so the inner div scrolls
         ROW_H      = 28
-        fig_height = max(int(len(bars) * ROW_H + 140), INNER_VIZ_HEIGHT + 200)
+        fig_height = max(int(len(bars) * ROW_H + 120), INNER_VIZ_HEIGHT + 160)
         fig.update_layout(
-            margin=dict(l=140, r=140, t=0, b=0),
-            height=fig_height,
-            showlegend=False,
+            margin=dict(l=120, r=100 if pct_all_nan else 130, t=0, b=0),
+            height=fig_height, showlegend=False,
         )
 
-        # ---------- Embed in fixed-height scrollport (ONLY the chart scrolls) ----------
-        scroll_h = INNER_VIZ_HEIGHT
-        html = fig.to_html(
-            include_plotlyjs="cdn", full_html=False, include_mathjax=False,
-            config={"displayModeBar": False},
-        )
+        # scroll container
+        html = fig.to_html(include_plotlyjs="cdn", full_html=False, include_mathjax=False,
+                           config={"displayModeBar": False})
         components.html(
-            f'<div style="height:{scroll_h}px; overflow-y:auto; overflow-x:hidden; '
-            f'margin-top:-12px; padding:0 8px;">{html}</div>',
-            height=scroll_h, scrolling=False,
+            f'<div style="height:{INNER_VIZ_HEIGHT}px; overflow-y:auto; overflow-x:hidden; '
+            f'margin-top:-12px; padding:0 6px;">{html}</div>',
+            height=INNER_VIZ_HEIGHT, scrolling=False,
         )
+
 
 
 # ----------------------------
