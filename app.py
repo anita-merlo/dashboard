@@ -56,7 +56,7 @@ def _natural_key(s: str):
 # ----------------------------
 # Data ingest
 # ----------------------------
-CSV_PATH_DEFAULT = "/Users/anamerlo/Downloads/scep_scep_eda_eda_dashboard.csv"
+CSV_PATH_DEFAULT = Path(__file__).parent / "data.csv.gz"
 
 @st.cache_data(show_spinner=False)
 def load_raw():
@@ -64,6 +64,17 @@ def load_raw():
     if not p.exists():
         return None
     return pd.read_csv(p, low_memory=False)
+
+raw = load_raw()
+if raw is None:
+    st.error(f"CSV not found at: {CSV_PATH_DEFAULT}")
+    st.stop()
+
+needed = {"combination_label", "state", "month", "year", "count"}
+missing = needed - set(raw.columns)
+if missing:
+    st.error(f"Missing required columns in CSV: {sorted(missing)}")
+    st.stop()
 
 raw = load_raw()
 if raw is None:
