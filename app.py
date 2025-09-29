@@ -311,7 +311,22 @@ INNER_VIZ_HEIGHT = 580  # height for map and bar-chart scrollport
 
 
 # STEP 1
-with c1: with st.container(border=True): st.markdown('<div style="font-size:18px; color:#005a70; font-weight:600; margin:0 0 8px 0;">STEP 1: CHOOSE A QUARTER RANGE</div>', unsafe_allow_html=True) q_start = st.selectbox("Start Quarter", quarters_all, index=0, key="q_start") q_end = st.selectbox("End Quarter", quarters_all, index=len(quarters_all)-1, key="q_end") if _quarter_key(q_start) > _quarter_key(q_end): q_start, q_end = q_end, q_start st.caption("Filter indicators by a quarter range (e.g., 2025Q1–2025Q4).") compare_mode = st.radio("Compare vs:", ["Previous period (equal length)", "Same quarters last year (YoY)"], index=0, help="Compare against the immediately preceding period of the same length, or YoY.", key="cmp_mode")
+with c1:
+    with st.container(border=True):
+        st.markdown(
+            '<div style="font-size:18px; color:#005a70; font-weight:600; margin:0 0 8px 0;">'
+            'STEP 1: CHOOSE A QUARTER RANGE</div>',
+            unsafe_allow_html=True
+        )
+        q_start = st.selectbox("Start Quarter", quarters_all, index=0, key="q_start")
+        q_end   = st.selectbox("End Quarter",   quarters_all, index=len(quarters_all)-1, key="q_end")
+
+        # Ensure start <= end
+        if _quarter_key(q_start) > _quarter_key(q_end):
+            q_start, q_end = q_end, q_start
+
+        st.caption("Comparison is fixed to the same quarters last year (YoY).")
+
 
 # STEP 2
 with c2:
