@@ -311,7 +311,9 @@ INNER_VIZ_HEIGHT = 580  # height for map and bar-chart scrollport
 
 
 # STEP 1
-# STEP 1 (with compare mode)
+# STEP 1 (YoY-only)
+# STEP 1 (Quarter RANGE, YoY comparison)
+# STEP 1 (default to Q1–Q4 2024, with YoY comparison)
 with c1:
     with st.container(border=True):
         st.markdown(
@@ -320,22 +322,33 @@ with c1:
             unsafe_allow_html=True
         )
 
-        q_start = st.selectbox("Start Quarter", quarters_all, index=0, key="q_start")
-        q_end   = st.selectbox("End Quarter",   quarters_all, index=len(quarters_all)-1, key="q_end")
+        # set defaults for Q1–Q4 2024
+        default_start = quarters_all.index("2024Q1") if "2024Q1" in quarters_all else 0
+        default_end   = quarters_all.index("2024Q4") if "2024Q4" in quarters_all else len(quarters_all)-1
 
-        # Ensure start <= end
+        q_start = st.selectbox("Start Quarter", quarters_all, index=default_start, key="q_start")
+        q_end   = st.selectbox("End Quarter",   quarters_all, index=default_end, key="q_end")
+
         if _quarter_key(q_start) > _quarter_key(q_end):
             q_start, q_end = q_end, q_start
 
-        st.caption("Filter indicators by a quarter range (e.g., 2025Q1–2025Q4).")
+        # Build labels
+        def _shift_quarter(q: str, years: int = -1) -> str:
+            y, qtr = q.split("Q")
+            return f"{int(y) + years}Q{int(qtr)}"
 
-        compare_mode = st.radio(
-            "Compare vs:",
-            ["Previous period (equal length)", "Same quarters last year (YoY)"],
-            index=0,
-            help="Compare against the immediately preceding period of the same length, or YoY.",
-            key="cmp_mode"
-        )
+        range_label = f"{q_start}–{q_end}"
+        prev_start  = _shift_quarter(q_start, -1)
+        prev_end    = _shift_quarter(q_end, -1)
+        comp_label  = f"{prev_start}–{prev_end}"
+
+        st.caption(
+    f"Choose any quarter range. We’ll use it as the **current** period and compare it to the **same quarters last year**.\n"
+    f"**Current:** {range_label}   •   **Previous:** {comp_label}"
+)
+
+
+
 
 
 
@@ -378,7 +391,7 @@ with c3:
             st.link_button("Learn More", url=url, help="Open the documentation for this indicator’s industry")
 
 # ----------------------------
-# Compute current & comparison  (counts = sum; ratios = ratio-of-sums)
+# Compute current & comparison  (YoY only)
 # ----------------------------
 q_list     = sorted(df["quarter"].unique(), key=_quarter_key)
 start_idx  = q_list.index(q_start)
@@ -389,17 +402,12 @@ def shift_quarter(q: str, years: int = -1) -> str:
     y, qtr = q.split("Q")
     return f"{int(y) + years}Q{int(qtr)}"
 
-if compare_mode == "Same quarters last year (YoY)":
-    prev_quarts = [shift_quarter(q, -1) for q in sel_quarts if shift_quarter(q, -1) in q_list]
-else:
-    n = len(sel_quarts)
-    prev_end_idx   = start_idx - 1
-    prev_start_idx = prev_end_idx - (n - 1)
-    prev_quarts    = q_list[prev_start_idx : prev_end_idx + 1] if prev_start_idx >= 0 else []
+# Compare only to the same quarters last year (YoY)
+prev_quarts = [shift_quarter(q, -1) for q in sel_quarts if shift_quarter(q, -1) in q_list]
 
 range_label = f"{q_start}–{q_end}"
-comp_label  = (f"{(prev_quarts[0] if prev_quarts else 'N/A')}–{(prev_quarts[-1] if prev_quarts else 'N/A')}"
-               if prev_quarts else "N/A")
+comp_label  = f"{prev_quarts[0]}–{prev_quarts[-1]}" if prev_quarts else "N/A"
+
 
 # --- helpers ---
 def is_ratio_indicator(name: str) -> bool:
@@ -512,79 +520,90 @@ def _is_ratio_text(name: str) -> bool:
 left, right = st.columns([1.25, 1])
 
 # LEFT: Explanation + Map (boxed)
+# LEFT: Heatmap (boxed) — use existing teal_scale colors
+# LEFT: Heatmap (boxed) — unified title + subtitle; keep teal colors; no colorbar title
 with left:
     with st.container(border=True):
+        indicator_label = indicator_selected
+        main_title_heatmap = f"State Heatmap — {indicator_label} ({range_label})"
+
+        # Determine subtitle (counts vs ratio)
+        is_ratio_sel = any(k in indicator_label.lower() for k in ("ratio", "intensity"))
+        subtitle = "Ratio for the selected period" if is_ratio_sel else "Job counts for the selected period"
+
+        # Header
         st.markdown(
-            '<div style="text-align:center; font-size:22px; color:#005a70; font-weight:700; margin:6px 0 6px 0;">'
-            'How is this indicator calculated?</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            f'<div style="font-size:14px; color:#2b2b2b; text-align:center; margin:0 0 8px 0;">{desc}</div>',
-            unsafe_allow_html=True,
-        )
-        # 👇 Add this
-        st.markdown(
-            f'<div style="font-size:13px; color:#5b6876; text-align:center; margin:-2px 0 10px 0;">'
-            f'Counting in this period (selected quarter range): <b>{range_label}</b>'
-            f'</div>',
+            f"""
+            <div style="width:100%; text-align:center; font-size:18px; color:#005a70; font-weight:600; margin:0 0 4px 0;">
+              {main_title_heatmap}
+            </div>
+            <div style="width:100%; text-align:center; font-size:12px; color:#6b7a87; margin:0 0 2px 0;">
+              {subtitle}
+            </div>
+            """,
             unsafe_allow_html=True,
         )
 
-        st.markdown('<hr style="border:0; border-top:1px solid #d9e2e8; margin:8px 0 10px 0;">', unsafe_allow_html=True)
-        st.markdown(
-            '<div style="width:100%; text-align:center; font-size:18px; color:#005a70; font-weight:700; margin:0 0 6px 0;">'
-            'State Heatmap by ELM Indicator</div>',
-            unsafe_allow_html=True,
-        )
-
-
-        # Map decimals
-        is_ratio_sel = any(k in indicator_selected.lower() for k in ("ratio", "intensity"))
+        # Map number formatting
         value_fmt = ",.2f" if is_ratio_sel else ",.0f"
 
-
+        # Data for map
         map_df = stats.copy()
         map_df["color_value"] = map_df["current"].clip(lower=0)  # negatives → white
         vmax = float(map_df["color_value"].max() or 1)
 
         teal_scale = [
-            (0.00,"white"),
-            (0.001,"#e9f5f7"),
-            (0.30,"#c3e0e7"),
-            (0.65,"#43a6b0"),
-            (1.00,"#005a70"),
+            (0.00, "white"),
+            (0.001, "#e9f5f7"),
+            (0.30, "#c3e0e7"),
+            (0.65, "#43a6b0"),
+            (1.00, "#005a70"),
         ]
 
         map_fig = px.choropleth(
-            map_df, locations="state", locationmode="USA-states",
-            color="color_value", scope="usa",
-            color_continuous_scale=teal_scale, range_color=(0, vmax),
+            map_df,
+            locations="state",
+            locationmode="USA-states",
+            color="color_value",
+            scope="usa",
+            color_continuous_scale=teal_scale,
+            range_color=(0, vmax),
+            labels={"color_value": ""},  # remove colorbar title, keep scale
         )
         map_fig.update_traces(
             customdata=np.stack([map_df["current"].values], axis=-1),
-            hovertemplate="<b>%{location}</b><br>" + f"{indicator_selected}: " + f"%{{customdata[0]:{value_fmt}}}"
-                         + "<extra></extra>",
+            hovertemplate="<b>%{location}</b><br>"
+                          + f"{indicator_label}: "
+                          + f"%{{customdata[0]:{value_fmt}}}"
+                          + "<extra></extra>",
         )
-        map_fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=INNER_VIZ_HEIGHT)
+        map_fig.update_layout(
+            margin=dict(l=0, r=0, t=0, b=0),
+            height=INNER_VIZ_HEIGHT,
+        )
+
         st.plotly_chart(map_fig, use_container_width=True)
+
+
 
 # RIGHT: Bar chart (boxed, scrolls inside)
 # ---------- RIGHT: Bar chart (boxed, scrolls inside; compact spacing) ----------
 # ---------- RIGHT: Bar chart (boxed, auto-tight) ----------
+# RIGHT: Bar chart (boxed) — unified title + subtitle; %Δ caption BELOW chart
 with right:
     with st.container(border=True):
         indicator_label = indicator_selected
         is_ratio_like   = any(k in indicator_label.lower() for k in ("ratio", "intensity"))
         main_title      = f"State Barchart — {indicator_label} ({range_label})"
 
+        # ✅ Use the variation label as the subtitle (no counts/ratio text)
         st.markdown(
             f"""
             <div style="width:100%; text-align:center; font-size:18px; color:#005a70; font-weight:600; margin:0 0 4px 0;">
               {main_title}
             </div>
             <div style="width:100%; text-align:center; font-size:12px; color:#6b7a87; margin:0 0 2px 0;">
-              Variation = % change vs <b>{comp_label}</b> across the selected quarter range.
+              Variation (%Δ) vs <b>{comp_label}</b>
             </div>
             """,
             unsafe_allow_html=True,
@@ -595,22 +614,17 @@ with right:
         pct_all_nan = bars["_pct"].isna().all()
 
         BAR_COLOR = "#005a70"
-        fig = px.bar(bars, x="current", y="state", orientation="h",
-                     labels={"state":"State","current":indicator_label})
+        fig = px.bar(
+            bars, x="current", y="state", orientation="h",
+            labels={"state": "State", "current": indicator_label}
+        )
         fig.update_traces(marker_color=BAR_COLOR, hoverinfo="skip", cliponaxis=False)
 
         xmax = float(bars["current"].max() or 1)
 
         # paddings
-        if is_ratio_like:
-            LEFT_PAD = max(xmax * 0.35, 0.15)   # enough for "0.00"
-        else:
-            LEFT_PAD = max(xmax * 0.12, 1.0)    # enough for "12.3K"
-
-        if pct_all_nan:
-            RIGHT_GAP_FRAC = 0.04               # super tight when no %Δ column
-        else:
-            RIGHT_GAP_FRAC = 0.18               # small but visible space for %Δ column
+        LEFT_PAD = max(xmax * (0.35 if is_ratio_like else 0.12), 0.15 if is_ratio_like else 1.0)
+        RIGHT_GAP_FRAC = 0.04 if pct_all_nan else 0.18
 
         # Optional %Δ column (only when we have it)
         if not pct_all_nan:
@@ -620,8 +634,10 @@ with right:
             pct_colors = bars["pct_change"].apply(
                 lambda v: "#2e7d32" if (pd.notna(v) and v >= 0) else ("#c62828" if pd.notna(v) else "#666")
             )
-            pct_text = bars["_pct"].map(lambda v: "–" if pd.isna(v)
-                                        else (f"▲ {abs(v):.1f}%" if v >= 0 else f"▼ {abs(v):.1f}%"))
+            pct_text = bars["_pct"].map(
+                lambda v: "–" if pd.isna(v) else (f"▲ {abs(v):.1f}%" if v >= 0 else f"▼ {abs(v):.1f}%")
+            )
+
             fig.add_trace(go.Scatter(
                 x=[VAR_X] * len(bars), y=bars["state"], mode="text",
                 text=pct_text, textfont=dict(color=pct_colors.tolist(), size=12),
@@ -633,7 +649,7 @@ with right:
                 line=dict(color="#edf2f5", width=1),
             )
 
-        # Left numeric column
+        # Left numeric column (values)
         val_text = bars["current"].map(lambda v: f"{v:.2f}" if is_ratio_like else _fmt_k(v))
         fig.add_trace(go.Scatter(
             x=[-LEFT_PAD * 0.92] * len(bars), y=bars["state"], mode="text",
@@ -662,12 +678,14 @@ with right:
             height=fig_height, showlegend=False,
         )
 
-        # scroll container
-        html = fig.to_html(include_plotlyjs="cdn", full_html=False, include_mathjax=False,
-                           config={"displayModeBar": False})
+        # Scroll container
+        html = fig.to_html(
+            include_plotlyjs="cdn", full_html=False, include_mathjax=False,
+            config={"displayModeBar": False}
+        )
         components.html(
             f'<div style="height:{INNER_VIZ_HEIGHT}px; overflow-y:auto; overflow-x:hidden; '
-            f'margin-top:-12px; padding:0 6px;">{html}</div>',
+            f'margin-top:-8px; padding:0 6px;">{html}</div>',
             height=INNER_VIZ_HEIGHT, scrolling=False,
         )
 
